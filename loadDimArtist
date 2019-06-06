@@ -6,44 +6,16 @@ CREATE PROCEDURE [dbo].[loadDimArtist]
 
 AS
 
---Load dimArtist Procedure
-declare @stage nvarchar(max);
-declare @counter int;
-declare @countRows int;
+INSERT INTO dbo.dimArtist (MBID, Name)
 
-set @counter = 1;
-set @countRows = (select count(*) from json_stage);
-
-drop table if exists #stage
-select 
-	*,
-	ROW_NUMBER() OVER(ORDER BY file_dump) r_num
-into
-	#stage
-from
-	json_stage
-;
-
-WHILE @counter <= @countRows
-BEGIN
-set @stage = (select file_dump from #stage where r_num = @counter);
-
-insert into dbo.dimArtist (mbid, name)
-select
-	*
-from (
-select 
-	distinct
-	json_value(value, '$.artist.mbid') artistMBID,
-	json_value(value, '$.artist.name') artistName
-from 
-	openjson(@stage)
+SELECT * FROM (
+SELECT
+	DISTINCT artistMBID,
+	artistName
+FROM
+	stage.finalStage
 ) stage
-
-where not exists (select mbid from dbo.dimArtist a where a.mbid = stage.artistMBID)
-SET @counter = @counter + 1
-
-END
+WHERE not exists (SELECT mbid FROM dbo.dimArtist a WHERE a.mbid = stage.artistMBID)
 
 RETURN 0
 GO
