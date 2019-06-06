@@ -1,4 +1,3 @@
-/****** Object:  Table [dbo].[dimVenue]    Script Date: 6/3/2019 2:05:32 PM ******/
 SET ANSI_NULLS ON
 GO
 
@@ -14,8 +13,8 @@ CREATE TABLE [dbo].[dimVenue](
 	[StateCode] [varchar](10) NULL,
 	[Country] [varchar](250) NULL,
 	[CountryCode] [varchar](10) NULL,
-	[lat] [decimal](18, 0) NULL,
-	[long] [decimal](18, 0) NULL
+	[lat] [decimal](12, 7) NULL,
+	[long] [decimal](12, 7) NULL
 ) ON [PRIMARY]
 GO
 
