@@ -6,142 +6,36 @@ CREATE PROCEDURE [dbo].[loadFactSetlist]
 
 AS
 
---loadFactSetList
-
---declare all variables
-DECLARE @stage nvarchar(max)
-DECLARE @innerCountRows int
-DECLARE @innerCounter int
-DECLARE @setListId varchar(max);
-DECLARE @artistId varchar(max);
-DECLARE @venueId varchar(max);
-DECLARE @sets nvarchar(max);
-DECLARE @eventDate varchar(max);
-DECLARE @outerCountRows int;
-DECLARE @outerCounter int;
-
---set variables that need to be established before OUTER WHILE LOOP starts
-set @outerCounter = 1;
-set @outerCountRows = (select count(*) from json_stage);
-
-drop table if exists #stage
-select 
-	*,
-	ROW_NUMBER() OVER(ORDER BY file_dump) r_num
-into
-	#stage
-from
-	json_stage
-;
-
-WHILE @outerCounter <= @outerCountRows
-BEGIN
-
---Set variables that need to be established before INNER WHILE LOOP starts
-set @stage = (select file_dump from #stage where r_num = @outerCounter);
-set @innerCountRows = (select count(*) from openjson(@stage));
-set @innerCounter = 1;
-
---temp table for the sets sub array
-drop table if exists #sets
-select 
-	row_number() over (order by json_query(value, '$.sets.set')) r_num,
-	json_value(value, '$.id') setListId,
-	json_value(value, '$.artist.mbid') artistMBID,
-	json_value(value, '$.venue.id') venueSLID,
-	json_value(value, '$.eventDate') eventDate,
-	json_query(value, '$.sets.set') sets
-into #sets
-from 
-	openjson(@stage)
-;
-
-drop table if exists #songs;
-CREATE table #songs (
-	setListId varchar(max),
-	artistMBID varchar(max),
-	venueSLID varchar(max),
-	eventDate varchar(max),
-	setName varchar(max),
-	song varchar(max),
-	songName varchar(max),
-	coverMBID varchar(max),
-	coverTMID varchar(max),
-	coverArtist varchar(max)
-)
-
---START WHILE LOOP
-WHILE @innerCounter <= @innerCountRows
-BEGIN
-
---Set variables that need to be updated in while loop
-SET @setListId = (select setListId from #sets where r_num = @innerCounter);
-SET @artistId = (select artistMBID from #sets where r_num = @innerCounter);
-SET @venueId = (select venueSLID from #sets where r_num = @innerCounter);
-SET @sets = (select sets from #sets where r_num = @innerCounter);
-SET @eventDate = (select eventDate from #sets where r_num = @innerCounter);
-
-INSERT INTO #songs
-(setListId, artistMBID, venueSLID, eventDate, setName, song, songName, coverMBID, coverTMID, coverArtist)
-select
-	@setlistId setListId,
-	@artistId artistMBID,
-	@venueId venueSLID,
-	@eventDate eventDate,
-	*
-from
-	openjson(@sets)
-WITH (
-	setName varchar(max) '$.name', 
-	song nvarchar(max) '$.song' as json) --json objects have to be type nvarchar(max)
-	outer apply openjson( song ) 
-                     with ( 
-							songname varchar(max) '$.name',
-							coverMBID varchar(max) '$.cover.mbid',
-							coverTMID varchar(max) '$.cover.tmid',
-							coverArtist varchar(max) '$.cover.name'  --may not need this in here
-	)
-
---update counter variable
-SET @innerCounter = @innerCounter + 1
-END
---END OF INNER WHILE LOOP
-;
-
 insert into dbo.factSetList
 (SourceId, ArtistId, VenueId, Date, SetName, SongName, SongOrder, CoverInd, CoverArtistId, CoverMBID)
 
 select * from (
 select 
-	SetListId SourceId,
-	a.ID as ArtistId,
-	v.Id as VenueID,
-	CAST(CONCAT( SUBSTRING(eventDate,4,2),'/',LEFT(eventDate,2),'/',RIGHT(eventDate,4)) AS DATE) Date,
-	SetName,
-	SongName,
-	ROW_NUMBER() OVER (PARTITION BY setListId ORDER BY setName, setListId) SongOrder,
+	showSLID,
+	a.id ArtistId,
+	v.id VenueId,
+	f.EventDate,
+	f.SetName,
+	f.SongName,
+	f.SongOrder,
 	CASE 
-		WHEN coverMBID IS NULL THEN 0
-		ELSE 1
+	WHEN f.CoverArtistMBID IS NULL THEN 0
+	ELSE 1
 	END CoverInd,
-	a2.Id as CoverArtistId,
-	CoverMBID 
+	a2.ID CoverArtistId,
+	f.CoverArtistMBID
 from
-	#songs s
+	stage.finalStage f
 join
-	dbo.dimArtist a on a.mbid = s.artistMBID
+	dbo.dimArtist a on a.mbid = f.ArtistMBID
+join
+	dbo.dimVenue v on v.venueSLID = f.venueSLID
 left join
-	dbo.dimArtist a2 on a2.mbid = s.coverMBID
-join
-	dbo.dimVenue v on v.venueSLID = s.venueSLID
+	dimArtist a2 on a2.mbid = f.CoverArtistMBID
 ) stage
 
-where not exists (select SourceId from dbo.factSetList f where f.SourceId = stage.SourceId)
-
-SET @outerCounter = @outerCounter + 1
-
-END
---END OF OUTER LOOP
+where not exists (select SourceId from dbo.factSetList f where f.SourceId = stage.showSLID)
 
 RETURN 0
+
 GO
