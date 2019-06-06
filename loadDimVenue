@@ -6,52 +6,24 @@ CREATE PROCEDURE [dbo].[loadDimVenue]
 
 AS
 
---load dimVenue
-declare @stage nvarchar(max);
-declare @counter int;
-declare @countRows int;
-
-set @counter = 1;
-set @countRows = (select count(*) from json_stage);
-
-drop table if exists #stage
-select 
-	*,
-	ROW_NUMBER() OVER(ORDER BY file_dump) r_num
-into
-	#stage
-from
-	json_stage
-;
-
-WHILE @counter <= @countRows
-BEGIN
-set @stage = (select file_dump from #stage where r_num = @counter);
-
 insert into dbo.dimVenue (venueSLID, Name, City, State, StateCode, Country, CountryCode, lat, long)
+select * from (
 select
-	*
-from (
-select 
-	distinct
-	json_value(value, '$.venue.id') venueSLID,
-	json_value(value, '$.venue.name') venueName,
-	json_value(value, '$.venue.city.name') city,
-	json_value(value, '$.venue.city.state') state,
-	json_value(value, '$.venue.city.stateCode') stateCode,
-	json_value(value, '$.venue.city.country.name') country,
-	json_value(value, '$.venue.city.country.code') countryCode,
-	json_value(value, '$.venue.city.coords.lat') lat,
-	json_value(value, '$.venue.city.coords.long') long
-from 
-	openjson(@stage)
+	distinct venueSLID,
+	venueName,
+	venueCity,
+	venueStateName,
+	venueStateCode,
+	venueCountryName,
+	venueCountryCode,
+	venueLat,
+	venueLong
+from
+	stage.finalStage
 ) stage
 
 WHERE not exists (select venueSLID from dbo.dimVenue v where v.venueSLID = stage.venueSLID)
 
-SET @counter = @counter + 1
-
-END
-
 RETURN 0
+
 GO
