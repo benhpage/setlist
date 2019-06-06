@@ -1,4 +1,3 @@
-/****** Object:  Table [dbo].[dimArtist]    Script Date: 6/3/2019 1:25:28 PM ******/
 SET ANSI_NULLS ON
 GO
 
