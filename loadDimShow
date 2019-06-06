@@ -6,58 +6,25 @@ CREATE PROCEDURE [dbo].[loadDimShow]
 
 AS
 
---load dimShow
-declare @stage nvarchar(max);
-declare @counter int;
-declare @countRows int;
-
-set @counter = 1;
-set @countRows = (select count(*) from json_stage);
-
-drop table if exists #stage
-select 
-	*,
-	ROW_NUMBER() OVER(ORDER BY file_dump) r_num
-into
-	#stage
-from
-	json_stage
-;
-
-WHILE @counter <= @countRows
-BEGIN
-set @stage = (select file_dump from #stage where r_num = @counter);
-
-insert into dbo.dimShow (SourceId, ArtistId, ArtistName, VenueId, VenueName, Date)
+insert into dbo.dimShow (SourceId, ArtistId, ArtistName, VenueId, VenueName, Date, ShowNight)
+select * from (
 select
-	setListId SourceId,
+	distinct showSLID,
 	a.ID ArtistId,
 	a.name ArtistName,
 	v.ID VenueId,
 	v.Name VenueName,
-	CAST(CONCAT( SUBSTRING(eventDate,4,2),'/',LEFT(eventDate,2),'/',RIGHT(eventDate,4)) AS DATE) Date
-from (
-select
-	distinct
-	json_value(value, '$.id') setListId,
-	json_value(value, '$.artist.mbid') artistMBID,
-	json_value(value, '$.artist.name') artistName,
-	json_value(value, '$.venue.id') venueSLID,
-	json_value(value, '$.venue.name') venueName,
-	json_value(value, '$.eventDate') eventDate,
-	*
+	eventDate,
+	NULL ShowNight
 from
-	openjson(@stage) x
+	stage.finalStage f
+join
+	dbo.dimArtist a on f.artistMBID = a.mbid
+join
+	dimVenue v on v.venueSLID = f.venueSLID
 ) stage
-join
-	dbo.dimArtist a on a.mbid = stage.artistMBID
-join
-	dbo.dimVenue v on v.venueSLID = stage.venueSLID
 
-where not exists (select mbid from dbo.dimShow s where s.SourceId = stage.setListId)
-SET @counter = @counter + 1
-
-END
+where not exists (select SourceId from dbo.dimShow s where s.SourceId = stage.showSLID)
 
 RETURN 0
 GO
